@@ -5,86 +5,32 @@ package docker
 
 import (
 	"context"
-	"fmt"
-	"io"
 
 	"github.com/daytonaio/daytona/pkg/models"
+	"github.com/daytonaio/daytona/pkg/ssh"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
 
-func (d *DockerClient) DestroyTarget(target *models.Target, targetDir string, logWriter io.Writer) error {
-	logWriter.Write([]byte("Destroying workspace container....\n"))
+func (d *DockerClient) DestroyTarget(target *models.Target, targetDir string, sshClient *ssh.Client) error {
+	return nil
+}
+
+func (d *DockerClient) DestroyWorkspace(workspace *models.Workspace, workspaceDir string, sshClient *ssh.Client) error {
 	ctx := context.Background()
 
-	containerName := d.GetTargetContainerName(target)
+	containerName := d.GetWorkspaceContainerName(workspace)
 
-	c, err := d.apiClient.ContainerInspect(ctx, containerName)
-	if err != nil {
-		return err
-	}
-
-	if !c.State.Running {
-		err := d.apiClient.ContainerStart(ctx, containerName, container.StartOptions{})
-		if err != nil {
-			return err
-		}
-	}
-
-	err = d.WaitForWindowsBoot(c.ID, d.targetOptions.RemoteHostname)
-	if err != nil {
-		return err
-	}
-
-	sshClient, err := d.GetSshClient(d.targetOptions.RemoteHostname)
-	if err != nil {
-		return err
-	}
-
-	cmd := fmt.Sprintf("rmdir /s /q %s", targetDir)
-	err = d.ExecuteCommand(cmd, logWriter, sshClient)
-	if err != nil {
-		return err
-	}
-
-	err = d.apiClient.ContainerRemove(ctx, containerName, container.RemoveOptions{
+	err := d.apiClient.ContainerRemove(ctx, containerName, container.RemoveOptions{
 		Force:         true,
-		RemoveVolumes: false,
+		RemoveVolumes: true,
 	})
-
 	if err != nil && !client.IsErrNotFound(err) {
 		return err
 	}
 
-	return nil
-}
-
-func (d *DockerClient) DestroyWorkspace(workspace *models.Workspace, workspaceDir string, logWriter io.Writer) error {
-	containerName := d.GetTargetContainerName(&workspace.Target)
-
-	c, err := d.apiClient.ContainerInspect(context.TODO(), containerName)
-	if err != nil {
-		return err
-	}
-	if !c.State.Running {
-		err = d.apiClient.ContainerStart(context.TODO(), containerName, container.StartOptions{})
-		if err != nil {
-			return err
-		}
-	}
-	err = d.WaitForWindowsBoot(c.ID, d.targetOptions.RemoteHostname)
-	if err != nil {
-		return err
-	}
-
-	sshClient, err := d.GetSshClient(d.targetOptions.RemoteHostname)
-	if err != nil {
-		return err
-	}
-
-	cmd := fmt.Sprintf("rmdir /s /q %s", workspaceDir)
-	err = d.ExecuteCommand(cmd, logWriter, sshClient)
-	if err != nil {
+	err = d.apiClient.VolumeRemove(ctx, containerName, true)
+	if err != nil && !client.IsErrNotFound(err) {
 		return err
 	}
 

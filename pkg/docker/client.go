@@ -11,10 +11,11 @@ import (
 	"runtime"
 	"strings"
 
-	provider_types "github.com/Rutik7066/daytona-provider-mac/pkg/types"
+	provider_types "github.com/Rutik7066/daytona-provider-macos/pkg/types"
 	"github.com/daytonaio/daytona/pkg/common"
 	"github.com/daytonaio/daytona/pkg/models"
 	"github.com/daytonaio/daytona/pkg/ssh"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
@@ -34,17 +35,17 @@ type IDockerClient interface {
 	CreateWorkspace(opts *CreateWorkspaceOptions) error
 	CreateTarget(target *models.Target, targetDir string, logWriter io.Writer, sshClient *ssh.Client) error
 
-	DestroyWorkspace(workspace *models.Workspace, workspaceDir string, logWriter io.Writer) error
-	DestroyTarget(target *models.Target, targetDir string, logWriter io.Writer) error
+	DestroyWorkspace(workspace *models.Workspace, workspaceDir string, sshClient *ssh.Client) error
+	DestroyTarget(target *models.Target, targetDir string, sshClient *ssh.Client) error
 
-	StartTarget(target *models.Target, logWriter io.Writer) error
-	StopTarget(logWriter io.Writer) error
+	StartWorkspace(opts *CreateWorkspaceOptions, daytonaDownloadUrl string) error
+	StopWorkspace(workspace *models.Workspace, logWriter io.Writer) error
 
 	GetWorkspaceProviderMetadata(workspace *models.Workspace) (string, error)
 	GetTargetProviderMetadata(t *models.Target) (string, error)
 
-	GetTargetContainerName(target *models.Target) string
-	GetTargetVolumeName(target *models.Target) string
+	GetWorkspaceContainerName(workspace *models.Workspace) string
+	GetWorkspaceVolumeName(workspace *models.Workspace) string
 	GetContainerLogs(containerName string, logWriter io.Writer) error
 	PullImage(imageName string, cr *models.ContainerRegistry, logWriter io.Writer) error
 }
@@ -66,29 +67,27 @@ type DockerClient struct {
 	targetOptions provider_types.TargetConfigOptions
 }
 
-func (d *DockerClient) GetTargetContainerName(target *models.Target) string {
+func (d *DockerClient) GetWorkspaceContainerName(workspace *models.Workspace) string {
 	containers, err := d.apiClient.ContainerList(context.Background(), container.ListOptions{
-		Filters: filters.NewArgs(
-			filters.Arg("label", fmt.Sprintf("daytona.target.id=%s", target.Id)),
-			filters.Arg("label", fmt.Sprintf("daytona.target.name=%s", target.Name+"-daytona-mac")),
-		),
-		All: true,
+		Filters: filters.NewArgs(filters.Arg("label", fmt.Sprintf("daytona.target.id=%s", workspace.TargetId)), filters.Arg("label", fmt.Sprintf("daytona.workspace.id=%s", workspace.Id))),
+		All:     true,
 	})
 	if err != nil || len(containers) == 0 {
-		return target.Id + "-daytona-mac"
+		return workspace.TargetId + "-" + workspace.Id
 	}
 
 	return containers[0].ID
 }
 
-func (d *DockerClient) GetTargetVolumeName(target *models.Target) string {
-	return target.Id + "-" + target.Name + "-daytona-mac"
+func (d *DockerClient) GetWorkspaceVolumeName(workspace *models.Workspace) string {
+	return workspace.TargetId + "-" + workspace.Id
 }
 
-func (d *DockerClient) OpenWebUI(hostname *string, logWriter io.Writer) {
-	url := "http://localhost:8006"
+func (d *DockerClient) OpenWebUI(hostname *string, containerData types.ContainerJSON, logWriter io.Writer) {
+	forwardedToPort := containerData.NetworkSettings.Ports["8006/tcp"][0].HostPort
+	url := fmt.Sprintf("http://localhost:%s", forwardedToPort)
 	if hostname != nil {
-		url = fmt.Sprintf("http://%s:8006", *hostname)
+		url = fmt.Sprintf("http://%s:%s", *hostname, forwardedToPort)
 	}
 	var err error
 	switch runtime.GOOS {
@@ -103,13 +102,13 @@ func (d *DockerClient) OpenWebUI(hostname *string, logWriter io.Writer) {
 	}
 
 	if err != nil {
-		logWriter.Write([]byte(fmt.Sprintf("Windows is started visit %s\n", url)))
+		logWriter.Write([]byte(fmt.Sprintf("MacOS is started visit %s\n", url)))
 	}
 
 }
 
-func (d *DockerClient) IsLocalWindowsTarget(providerName, options, runnerId string) bool {
-	if providerName != "mac-provider" {
+func (d *DockerClient) IsLocalMacTarget(providerName, options, runnerId string) bool {
+	if providerName != "macos-provider" {
 		return false
 	}
 

@@ -6,35 +6,52 @@ package docker
 import (
 	"context"
 	"fmt"
-	"io"
 
-	"github.com/daytonaio/daytona/pkg/models"
 	"github.com/docker/docker/api/types/container"
 )
 
-func (d *DockerClient) StartTarget(target *models.Target, logWriter io.Writer) error {
-	logWriter.Write([]byte("Starting workspace container\n"))
-	containerName := d.GetTargetContainerName(target)
-	ctx := context.Background()
-
-	c, err := d.apiClient.ContainerInspect(ctx, containerName)
+func (d *DockerClient) StartWorkspace(opts *CreateWorkspaceOptions, daytonaDownloadUrl string) error {
+	containerName := d.GetWorkspaceContainerName(opts.Workspace)
+	c, err := d.apiClient.ContainerInspect(context.TODO(), containerName)
 	if err != nil {
 		return fmt.Errorf("failed to inspect container when starting project: %w", err)
 	}
 
 	if !c.State.Running {
-		err = d.apiClient.ContainerStart(ctx, containerName, container.StartOptions{})
+		err = d.apiClient.ContainerStart(context.TODO(), containerName, container.StartOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to start container: %w", err)
 		}
+
+		c, err := d.apiClient.ContainerInspect(context.TODO(), containerName)
+		if err != nil {
+			return fmt.Errorf("failed to inspect container when starting project: %w", err)
+		}
+
+		if !c.State.Running {
+			return fmt.Errorf("failed to start container")
+		}
+
+		d.OpenWebUI(d.targetOptions.RemoteHostname, c, opts.LogWriter)
+
+		err = d.WaitForMacOsBoot(c.ID, d.targetOptions.RemoteHostname)
+		if err != nil {
+			return err
+		}
 	}
 
-	d.OpenWebUI(d.targetOptions.RemoteHostname, logWriter)
-
-	err = d.WaitForWindowsBoot(c.ID, d.targetOptions.RemoteHostname)
+	sshClient, err := d.GetSshClient(d.targetOptions.RemoteHostname)
 	if err != nil {
 		return err
 	}
+
+	command := `source ~/.zshrc && osascript -e 'do shell script "daytona agent > /Users/daytona/.daytona-agent.log 2>&1 &"'`
+	err = d.ExecuteCommand(command, opts.LogWriter, sshClient)
+	if err != nil {
+		opts.LogWriter.Write([]byte(fmt.Sprintf("failed to execute command %s: %s\n", command, err.Error())))
+	}
+
+	opts.LogWriter.Write([]byte("Daytona agent started\n"))
 
 	return nil
 }

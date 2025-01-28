@@ -36,7 +36,7 @@ func (d *DockerClient) GetWorkspaceProviderMetadata(w *models.Workspace) (string
 func (d *DockerClient) getContainerInfo(w *models.Workspace) (*types.ContainerJSON, error) {
 	ctx := context.Background()
 
-	info, err := d.apiClient.ContainerInspect(ctx, d.GetTargetContainerName(&w.Target))
+	info, err := d.apiClient.ContainerInspect(ctx, d.GetWorkspaceContainerName(w))
 	if err != nil {
 		return nil, err
 	}

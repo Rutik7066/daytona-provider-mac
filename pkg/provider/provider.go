@@ -9,12 +9,12 @@ import (
 	"path"
 	"runtime"
 
-	internal "github.com/Rutik7066/daytona-provider-mac/internal"
-	log_writers "github.com/Rutik7066/daytona-provider-mac/internal/log"
-	"github.com/Rutik7066/daytona-provider-mac/pkg/client"
-	"github.com/Rutik7066/daytona-provider-mac/pkg/types"
+	internal "github.com/Rutik7066/daytona-provider-macos/internal"
+	log_writers "github.com/Rutik7066/daytona-provider-macos/internal/log"
+	"github.com/Rutik7066/daytona-provider-macos/pkg/client"
+	"github.com/Rutik7066/daytona-provider-macos/pkg/types"
 
-	"github.com/Rutik7066/daytona-provider-mac/pkg/docker"
+	"github.com/Rutik7066/daytona-provider-macos/pkg/docker"
 	"github.com/daytonaio/daytona/pkg/logs"
 	"github.com/daytonaio/daytona/pkg/models"
 	"github.com/daytonaio/daytona/pkg/provider"
@@ -73,12 +73,12 @@ func (p *MacProvider) Initialize(req provider.InitializeProviderRequest) (*provi
 }
 
 func (p MacProvider) GetInfo() (models.ProviderInfo, error) {
-	label := "Windows"
+	label := "MacOS"
 
 	return models.ProviderInfo{
-		Name:                 "mac-provider",
+		Name:                 "macos-provider",
 		Label:                &label,
-		AgentlessTarget:      true,
+		AgentlessTarget:      false,
 		Version:              internal.Version,
 		TargetConfigManifest: *types.GetTargetConfigManifest(),
 	}, nil
@@ -94,97 +94,14 @@ func (p MacProvider) GetPresetTargetConfigs() (*[]provider.TargetConfig, error) 
 }
 
 func (p MacProvider) StartTarget(targetReq *provider.TargetRequest) (*provider_util.Empty, error) {
-	dockerClient, err := p.getClient(targetReq.Target.TargetConfig.Options)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
-	logWriter := io.MultiWriter(&log_writers.InfoLogWriter{})
-	if p.TargetLogsDir != nil {
-		loggerFactory := logs.NewLoggerFactory(logs.LoggerFactoryConfig{
-			LogsDir:     *p.TargetLogsDir,
-			ApiUrl:      p.ApiUrl,
-			ApiKey:      p.ApiKey,
-			ApiBasePath: &logs.ApiBasePathTarget,
-		})
-		targetLogWriter, err := loggerFactory.CreateLogger(targetReq.Target.Id, targetReq.Target.Name, logs.LogSourceProvider)
-		if err != nil {
-			return new(provider_util.Empty), err
-		}
-		logWriter = io.MultiWriter(&log_writers.InfoLogWriter{}, targetLogWriter)
-		defer targetLogWriter.Close()
-	}
-
-	err = dockerClient.StartTarget(targetReq.Target, logWriter)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
 	return new(provider_util.Empty), nil
 }
 
 func (p MacProvider) StopTarget(targetReq *provider.TargetRequest) (*provider_util.Empty, error) {
-	dockerClient, err := p.getClient(targetReq.Target.TargetConfig.Options)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
-	logWriter := io.MultiWriter(&log_writers.InfoLogWriter{})
-	if p.TargetLogsDir != nil {
-		loggerFactory := logs.NewLoggerFactory(logs.LoggerFactoryConfig{
-			LogsDir:     *p.TargetLogsDir,
-			ApiUrl:      p.ApiUrl,
-			ApiKey:      p.ApiKey,
-			ApiBasePath: &logs.ApiBasePathTarget,
-		})
-		targetLogWriter, err := loggerFactory.CreateLogger(targetReq.Target.Id, targetReq.Target.Name, logs.LogSourceProvider)
-		if err != nil {
-			return new(provider_util.Empty), err
-		}
-		logWriter = io.MultiWriter(&log_writers.InfoLogWriter{}, targetLogWriter)
-		defer targetLogWriter.Close()
-	}
-
-	err = dockerClient.StopTarget(logWriter)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
 	return new(provider_util.Empty), nil
 }
 
 func (p MacProvider) DestroyTarget(targetReq *provider.TargetRequest) (*provider_util.Empty, error) {
-	dockerClient, err := p.getClient(targetReq.Target.TargetConfig.Options)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
-	logWriter := io.MultiWriter(&log_writers.InfoLogWriter{})
-	if p.TargetLogsDir != nil {
-		loggerFactory := logs.NewLoggerFactory(logs.LoggerFactoryConfig{
-			LogsDir:     *p.TargetLogsDir,
-			ApiUrl:      p.ApiUrl,
-			ApiKey:      p.ApiKey,
-			ApiBasePath: &logs.ApiBasePathTarget,
-		})
-		targetLogWriter, err := loggerFactory.CreateLogger(targetReq.Target.Id, targetReq.Target.Name, logs.LogSourceProvider)
-		if err != nil {
-			return new(provider_util.Empty), err
-		}
-		logWriter = io.MultiWriter(&log_writers.InfoLogWriter{}, targetLogWriter)
-		defer targetLogWriter.Close()
-	}
-
-	targetDir, err := p.getTargetDir(targetReq)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
-	err = dockerClient.DestroyTarget(targetReq.Target, targetDir, logWriter)
-	if err != nil {
-		return new(provider_util.Empty), err
-	}
-
 	return new(provider_util.Empty), nil
 }
 
@@ -194,28 +111,20 @@ func (p MacProvider) DestroyWorkspace(workspaceReq *provider.WorkspaceRequest) (
 		return new(provider_util.Empty), err
 	}
 
-	logWriter := io.MultiWriter(&log_writers.InfoLogWriter{})
-	if p.WorkspaceLogsDir != nil {
-		loggerFactory := logs.NewLoggerFactory(logs.LoggerFactoryConfig{
-			LogsDir:     *p.WorkspaceLogsDir,
-			ApiUrl:      p.ApiUrl,
-			ApiKey:      p.ApiKey,
-			ApiBasePath: &logs.ApiBasePathWorkspace,
-		})
-		workspaceLogWriter, err := loggerFactory.CreateLogger(workspaceReq.Workspace.Target.Id, workspaceReq.Workspace.Target.Name, logs.LogSourceProvider)
-		if err != nil {
-			return new(provider_util.Empty), err
-		}
-		logWriter = io.MultiWriter(&log_writers.InfoLogWriter{}, workspaceLogWriter)
-		defer workspaceLogWriter.Close()
-	}
-
 	workspaceDir, err := p.getWorkspaceDir(workspaceReq)
 	if err != nil {
 		return new(provider_util.Empty), err
 	}
 
-	err = dockerClient.DestroyWorkspace(workspaceReq.Workspace, workspaceDir, logWriter)
+	sshClient, err := p.getSshClient(workspaceReq.Workspace.Target.TargetConfig.Options)
+	if err != nil {
+		return new(provider_util.Empty), err
+	}
+	if sshClient != nil {
+		defer sshClient.Close()
+	}
+
+	err = dockerClient.DestroyWorkspace(workspaceReq.Workspace, workspaceDir, sshClient)
 	if err != nil {
 		return new(provider_util.Empty), err
 	}
@@ -233,10 +142,75 @@ func (p MacProvider) GetTargetProviderMetadata(targetReq *provider.TargetRequest
 }
 
 func (p MacProvider) StartWorkspace(workspaceReq *provider.WorkspaceRequest) (*provider_util.Empty, error) {
+	dockerClient, err := p.getClient(workspaceReq.Workspace.Target.TargetConfig.Options)
+	if err != nil {
+		return new(provider_util.Empty), err
+	}
+
+	logWriter := io.MultiWriter(&log_writers.InfoLogWriter{})
+	if p.WorkspaceLogsDir != nil {
+		loggerFactory := logs.NewLoggerFactory(logs.LoggerFactoryConfig{
+			LogsDir:     *p.WorkspaceLogsDir,
+			ApiUrl:      p.ApiUrl,
+			ApiKey:      p.ApiKey,
+			ApiBasePath: &logs.ApiBasePathWorkspace,
+		})
+		workspaceLogWriter, err := loggerFactory.CreateLogger(workspaceReq.Workspace.Id, workspaceReq.Workspace.Name, logs.LogSourceProvider)
+		if err != nil {
+			return new(provider_util.Empty), err
+		}
+		logWriter = io.MultiWriter(&log_writers.InfoLogWriter{}, workspaceLogWriter)
+		defer workspaceLogWriter.Close()
+	}
+
+	workspaceDir, err := p.getWorkspaceDir(workspaceReq)
+	if err != nil {
+		return new(provider_util.Empty), err
+	}
+
+	err = dockerClient.StartWorkspace(&docker.CreateWorkspaceOptions{
+		Workspace:           workspaceReq.Workspace,
+		WorkspaceDir:        workspaceDir,
+		ContainerRegistries: workspaceReq.ContainerRegistries,
+		BuilderImage:        workspaceReq.BuilderImage,
+		LogWriter:           logWriter,
+		Gpc:                 workspaceReq.GitProviderConfig,
+		SshClient:           nil,
+	}, "")
+	if err != nil {
+		return new(provider_util.Empty), err
+	}
+
 	return new(provider_util.Empty), nil
 }
 
 func (p MacProvider) StopWorkspace(workspaceReq *provider.WorkspaceRequest) (*provider_util.Empty, error) {
+	dockerClient, err := p.getClient(workspaceReq.Workspace.Target.TargetConfig.Options)
+	if err != nil {
+		return new(provider_util.Empty), err
+	}
+
+	logWriter := io.MultiWriter(&log_writers.InfoLogWriter{})
+	if p.WorkspaceLogsDir != nil {
+		loggerFactory := logs.NewLoggerFactory(logs.LoggerFactoryConfig{
+			LogsDir:     *p.WorkspaceLogsDir,
+			ApiUrl:      p.ApiUrl,
+			ApiKey:      p.ApiKey,
+			ApiBasePath: &logs.ApiBasePathWorkspace,
+		})
+		workspaceLogWriter, err := loggerFactory.CreateLogger(workspaceReq.Workspace.Id, workspaceReq.Workspace.Name, logs.LogSourceProvider)
+		if err != nil {
+			return new(provider_util.Empty), err
+		}
+		logWriter = io.MultiWriter(&log_writers.InfoLogWriter{}, workspaceLogWriter)
+		defer workspaceLogWriter.Close()
+	}
+
+	err = dockerClient.StopWorkspace(workspaceReq.Workspace, logWriter)
+	if err != nil {
+		return new(provider_util.Empty), err
+	}
+
 	return new(provider_util.Empty), nil
 }
 
@@ -304,13 +278,12 @@ func (p MacProvider) CheckRequirements() (*[]provider.RequirementStatus, error) 
 	return &results, nil
 }
 
-// Workspace directory and project directory will be on mac vm.
 func (p *MacProvider) getWorkspaceDir(workspaceReq *provider.WorkspaceRequest) (string, error) {
-	return fmt.Sprintf("C:\\Users\\daytona\\Desktop\\%s\\%s", workspaceReq.Workspace.Target.Name, workspaceReq.Workspace.Name), nil
+	return fmt.Sprintf("/Users/daytona/Desktop/%s/%s", workspaceReq.Workspace.Target.Name, workspaceReq.Workspace.Name), nil
 }
 
 func (p *MacProvider) getTargetDir(targetReq *provider.TargetRequest) (string, error) {
-	return fmt.Sprintf("C:\\Users\\daytona\\Desktop\\%s", targetReq.Target.Name), nil
+	return fmt.Sprintf("/Users/daytona/Desktop/%s", targetReq.Target.Name), nil
 }
 
 func (p *MacProvider) getSshClient(targetOptionsJson string) (*ssh.Client, error) {
